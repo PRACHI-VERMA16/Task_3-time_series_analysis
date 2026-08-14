@@ -1,0 +1,60 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from sklearn.metrics import mean_squared_error
+
+df = pd.read_csv("DAYTON_hourly.csv")
+df["Datetime"] = pd.to_datetime(df["Datetime"])
+df = df.sort_values("Datetime").set_index("Datetime")
+df = df[["DAYTON_MW"]].rename(columns={"DAYTON_MW": "Demand"})
+df["Demand"] = df["Demand"].interpolate()
+
+plt.figure(figsize=(14,5))
+plt.plot(df["Demand"])
+plt.title("Hourly Electricity Demand")
+plt.show()
+
+daily = df["Demand"].resample("D").mean()
+
+decomp = seasonal_decompose(daily, model="additive", period=7)
+decomp.plot()
+plt.show()
+
+df["MA_24"] = df["Demand"].rolling(24).mean()
+df["MA_7D"] = df["Demand"].rolling(168).mean()
+
+plt.figure(figsize=(14,5))
+plt.plot(df["Demand"], label="Actual")
+plt.plot(df["MA_24"], label="24-Hour MA")
+plt.plot(df["MA_7D"], label="7-Day MA")
+plt.legend()
+plt.show()
+
+train = daily[:-30]
+test = daily[-30:]
+
+model = SARIMAX(
+    train,
+    order=(1,1,1),
+    seasonal_order=(1,1,1,7),
+    enforce_stationarity=False,
+    enforce_invertibility=False
+)
+
+fit = model.fit(disp=False)
+forecast = fit.forecast(30)
+forecast.index = test.index
+
+rmse = np.sqrt(mean_squared_error(test, forecast))
+print("RMSE:", round(rmse, 2))
+
+plt.figure(figsize=(14,5))
+plt.plot(test, label="Actual")
+plt.plot(forecast, label="Forecast")
+plt.legend()
+plt.show()
+
+print("Peak Demand:", df["Demand"].max())
+print("Lowest Demand:", df["Demand"].min())
